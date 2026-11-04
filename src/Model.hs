@@ -9,6 +9,7 @@ data GameState = GameState {
 ,   gameStatus :: GameStatus
 ,   ghosts :: Ghosts
 ,   player :: Player
+,   totalSteps :: Int
 }
 
 --
@@ -26,6 +27,7 @@ instance Show Direction where
 
 -- Everything that is used for the player
 data PlayerState = Dead | Alive
+  deriving Eq
 data PlayerPowerUp = Inactive | Active Int
 --data PlayerPosition = Coordinate
 data Player = Player {
@@ -61,20 +63,25 @@ type Maze = [[Tile]]
 -- Maze functionality
 -- Returns what the tile is
 whatTile :: Maze -> Coordinate -> TileOption
-whatTile maze@(a : as) (x, y) | x < length a && x > 0 && y < length maze && y > 0 = (maze !! y) !! x
-                              | otherwise = W
+whatTile maze (x, y) | x < mazeWidth && x > 0 && y < mazeLength && y > 0 = (maze !! y) !! x
+                     | otherwise                                         = W
 
 initialState :: GameState
 initialState = GameState { maze = testBoard
                            , points = 0
                            , gameStatus = Play
-                           , ghosts = [Ghost { ghostState = Chasing, ghostAlgorithm = ShortPath, ghostPosition = (1, 1), ghostDirection = East, tilesAway = 40 }]
-                           , player = Player { playerState = Alive, playerPowerUp = Inactive, playerPosition = (13, 23), playerDirection = West, nextDirection = East } }
+                           , ghosts = [Ghost { ghostState = Chasing, ghostAlgorithm = ShortPath, ghostPosition = (1, 1), ghostDirection = East, tilesAway = 40 },
+                                       Ghost { ghostState = Chasing, ghostAlgorithm = FuturePath, ghostPosition = (1, 29), ghostDirection = East, tilesAway = 40 },
+                                       Ghost { ghostState = Chasing, ghostAlgorithm = PastPath, ghostPosition = (25, 1), ghostDirection = East, tilesAway = 40 },
+                                       Ghost { ghostState = Chasing, ghostAlgorithm = ShortPath, ghostPosition = (25, 29), ghostDirection = East, tilesAway = 40 }]
+                           , player = Player { playerState = Alive, playerPowerUp = Inactive, playerPosition = (13, 23), playerDirection = West, nextDirection = East } 
+                           , totalSteps = 0
+                           }
 
 -- The basic starting maze
 testBoard :: Maze
 testBoard = [[W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W],
-             [W, P, P, P, P, P, P, P, P, P, P, P, P, W, W, P, P, P, P, P, P, P, P, P, P, P, P, W],
+             [W, E, P, P, P, P, P, P, P, P, P, P, P, W, W, P, P, P, P, P, P, P, P, P, P, P, P, W],
              [W, P, W, W, W, W, P, W, W, W, W, W, P, W, W, P, W, W, W, W, W, P, W, W, W, W, P, W],
              [W, S, W, W, W, W, P, W, W, W, W, W, P, W, W, P, W, W, W, W, W, P, W, W, W, W, S, W],
              [W, P, W, W, W, W, P, W, W, W, W, W, P, W, W, P, W, W, W, W, W, P, W, W, W, W, P, W],
@@ -104,3 +111,12 @@ testBoard = [[W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, 
              [W, P, W, W, W, W, W, W, W, W, W, W, P, W, W, P, W, W, W, W, W, W, W, W, W, W, P, W],
              [W, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, W],
              [W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W]]
+
+emptyMaze :: Maze
+emptyMaze = [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []]
+
+mazeLength :: Int
+mazeLength = length testBoard
+
+mazeWidth :: Int
+mazeWidth  = length (testBoard !! 0)
