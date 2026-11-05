@@ -10,25 +10,32 @@ import System.Random
 
 -- | Handle one iteration of the game
 step :: Float -> GameState -> IO GameState
-step secs gstate
-  | gameStatus gstate  == Play
+step secs gstate@GameState { gameStatus = Play }
   = -- First we check for collision, then we move the ghosts and players.
-    let gstate'  = updateMaze gstate
-        gstate'' = updatePlayer gstate' 
-        ghosts'  = updateGhosts (ghosts gstate'') gstate''
-    in  return gstate'' { ghosts = ghosts', totalSteps = (totalSteps gstate'') + 1 }
-
-  | otherwise
-  = -- Just update the elapsed time
-    return $ gstate 
+    let gstate'   = updateMaze gstate
+        gstate''  = updatePlayer gstate' 
+        ghosts'   = updateGhosts (ghosts gstate'') gstate''
+        gstate''' = if (checkForWin (maze gstate'') (0, 0)) then animationState { gameStatus = Win 60 } else gstate'' { ghosts = ghosts', totalSteps = (totalSteps gstate'') + 1 }
+    in  return gstate'''
+step secs gstate@GameState { gameStatus = Win i }  | i > 0     = return gstate { gameStatus = Win (i - 1), player = (player gstate) { playerPosition = playerAnimation (playerPosition (player gstate)) i }, ghosts = map (ghostAnimation i) (ghosts gstate) }
+                                                   | otherwise = return initialState
+step secs gstate@GameState { gameStatus = Lose i } | i > 0     = return gstate { gameStatus = Lose (i - 1), player = (player gstate) { playerPosition = playerAnimation (playerPosition (player gstate)) i}, ghosts = map (ghostAnimation i) (ghosts gstate)  }
+                                                   | otherwise = return initialState
+step secs gstate                                               = return gstate
 
 updatePlayer :: GameState -> GameState
 updatePlayer gstate = let (ghosts', player') = checkForCollision (ghosts gstate) (player gstate)
                           player'' = if ((playerState player') == Alive && ((totalSteps gstate) `mod` 2) == 1) then playerMove (playerTurn (maze gstate) player') (maze gstate) else player'
-                      in  gstate { player = player'', ghosts = ghosts' }
+                          player''' = updatePlayerPowerUp player''
+                      in  if (playerState player''') == Dead then animationState { gameStatus = Lose 60 } else gstate { player = player''', ghosts = ghosts' }
 
 updateGhosts :: Ghosts -> GameState -> Ghosts
 updateGhosts ghosts gstate = if ((totalSteps gstate) `mod` 3) == 1 then map (ghostGo (maze gstate) (player gstate)) ghosts else ghosts
+
+updatePlayerPowerUp :: Player -> Player
+updatePlayerPowerUp player@Player { playerPowerUp = Active 0 } = player { playerPowerUp = Inactive }
+updatePlayerPowerUp player@Player { playerPowerUp = Active i } = player { playerPowerUp = Active (i - 1)}
+updatePlayerPowerUp player                                     = player
 
 
 -- | Handle user input
@@ -36,12 +43,20 @@ input :: Event -> GameState -> IO GameState
 input e gstate = return (inputKey e gstate)
 
 inputKey :: Event -> GameState -> GameState
-inputKey (EventKey (Char c) _ _ _) gstate
+inputKey (EventKey (Char c) Down _ _) gstate
     | c == 'w' = gstate { player = changePlayerDirection (player gstate) North }
     | c == 'a' = gstate { player = changePlayerDirection (player gstate) West }
     | c == 's' = gstate { player = changePlayerDirection (player gstate) South }
     | c == 'd' = gstate { player = changePlayerDirection (player gstate) East }
+    | c == 'p' = gstate { gameStatus = pauseState (gameStatus gstate) }
+inputKey (EventKey (SpecialKey KeySpace) _ _ _) GameState { gameStatus = Home } = initialState { gameStatus = Play }
 inputKey _ gstate = gstate -- Otherwise keep the same
+
+-- gameState changing
+pauseState :: GameStatus -> GameStatus
+pauseState  Play = Pause
+pauseState Pause = Play
+pauseState state = state
 
 -- General functionality
 move :: Coordinate -> Direction -> Coordinate
@@ -110,14 +125,14 @@ getInt (Node _ i _) = i
 
 flatten :: GamePathingTree -> [Direction]
 flatten Leaf                  = []
-flatten (PacMan _)            = []
+flatten (PacMan direction)    = [direction]
 flatten (Node direction _ xs) = direction : concatMap flatten xs
 
 -- Both Leaf and PacMan should never be used here. This method should only be called when we need to know where we want to go next. Using maybe code here would only make the other code more complex when it really should just not happen.
 nextValue :: Int -> [Direction] -> Direction
 nextValue _ []       = West
-nextValue 0 (x : xs) = x
-nextValue i (x : xs) = nextValue (i - 1) xs
+nextValue 0 (x : _) = x
+nextValue i (_ : xs) = nextValue (i - 1) xs
 
 ghostGo :: Maze -> Player -> Ghost -> Ghost
 ghostGo maze player ghost@Ghost { ghostState = Chasing} = ghostMove (getNextDirection (playerPosition player) ghost) maze
@@ -126,36 +141,47 @@ ghostGo maze player ghost@Ghost { ghostState = Chasing} = ghostMove (getNextDire
     getNextDirection playerCoord ghost'@Ghost { ghostAlgorithm = ShortPath } = 
         let tree = shortestPath maze playerCoord ghost' { tilesAway = (tilesAway ghost) + 3 }
         in  ghost { ghostDirection = nextValue 1 (flatten tree), tilesAway = if tree == Leaf then (tilesAway ghost) else getInt tree }
+
     getNextDirection _ ghost'@Ghost { ghostAlgorithm = FuturePath } = 
         let tree = shortestPath maze (futurePosition player 5) ghost' { tilesAway = (tilesAway ghost) + 3 }
         in  ghost { ghostDirection = nextValue 1 (flatten tree), tilesAway = if tree == Leaf then (tilesAway ghost) else getInt tree }
+
     getNextDirection _ ghost'@Ghost { ghostAlgorithm = PastPath } = 
         let tree = shortestPath maze (pastPosition player 5) ghost' { tilesAway = (tilesAway ghost) + 3 }
         in  ghost { ghostDirection = nextValue 1 (flatten tree), tilesAway = if tree == Leaf then (tilesAway ghost) else getInt tree }
+
     getNextDirection playerCoord ghost'@Ghost { ghostAlgorithm = ShyPath } = -- Not yet implemented, is now just ShortPath
         let tree = shortestPath maze playerCoord ghost' { tilesAway = (tilesAway ghost) + 2 }
         in  ghost { ghostDirection = nextValue 1 (flatten tree), tilesAway = if tree == Leaf then (tilesAway ghost) else getInt tree }
+
     getNextDirection playerCoord ghost'@Ghost { ghostAlgorithm = Guard _ } = -- Not yet implemented, is now just ShortPath
         let tree = shortestPath maze playerCoord ghost' { tilesAway = (tilesAway ghost) + 2 }
         in  ghost { ghostDirection = nextValue 1 (flatten tree), tilesAway = if tree == Leaf then (tilesAway ghost) else getInt tree }
-    getNextDirection playerCoord ghost'@Ghost { ghostAlgorithm = Random } = -- Not yet implemented, is now just ShortPath
-        let tree = shortestPath maze playerCoord ghost' { tilesAway = (tilesAway ghost) + 2 }
-        in  ghost { ghostDirection = nextValue 1 (flatten tree), tilesAway = if tree == Leaf then (tilesAway ghost) else getInt tree }
+
+    getNextDirection _ Ghost { ghostAlgorithm = Random } = ghost { ghostDirection = randomDirection ghost }
 
     futurePosition :: Player -> Int -> Coordinate
-    futurePosition player' 0 = (playerPosition player)
+    futurePosition player' 0 = (playerPosition player')
     futurePosition player' i = futurePosition (nextPlayerPosition player') (i - 1) 
 
     nextPlayerPosition :: Player -> Player
-    nextPlayerPosition player' = let possibleDirections = checkForIntersection maze (playerPosition player) (playerDirection player)
+    nextPlayerPosition player' = let possibleDirections = checkForIntersection maze (playerPosition player') (playerDirection player')
                                      pureGen            = mkStdGen 137
                                      randomNumber       = fst (uniformR (0 :: Int, ((length possibleDirections) - 1) :: Int) pureGen)
                                  in  playerMove (player' { playerDirection = (possibleDirections !! randomNumber) }) maze
 
     pastPosition :: Player -> Int -> Coordinate
-    pastPosition player' 0 = (playerPosition player)
-    pastPosition player' i = pastPosition (nextPlayerPosition (player' { playerDirection = reverseDirection (playerDirection player') })) (i - 1) 
-ghostGo _ _ ghost = ghost
+    pastPosition player' 0 = (playerPosition player')
+    pastPosition player' i = pastPosition (nextPlayerPosition (player' { playerDirection = reverseDirection (playerDirection player') })) (i - 1)
+    
+    randomDirection :: Ghost -> Direction
+    randomDirection ghost' = let possibleDirections = checkForIntersection maze (ghostPosition ghost') (ghostDirection ghost')
+                                 pureGen            = mkStdGen 137
+                                 randomNumber       = fst (uniformR (0 :: Int, ((length possibleDirections) - 1) :: Int) pureGen)
+                             in  possibleDirections !! randomNumber
+
+ghostGo _ _ ghost@Ghost {ghostState = Eaten 0} = ghost { ghostState = Chasing, tilesAway = 40 }
+ghostGo _ _ ghost@Ghost {ghostState = Eaten i} = ghost { ghostState = Eaten (i - 1) }
 
 
 shortestPath :: Maze -> Coordinate -> Ghost -> GamePathingTree
@@ -184,7 +210,7 @@ checkForCollision allGhosts player = let bools = [(ghostPosition ghost) == (play
     helper _ _ p = ([], p)
 
 handleCollisionGhost :: Ghost -> Player -> Ghost
-handleCollisionGhost ghost Player { playerPowerUp = Active _} = ghost { ghostState = Eaten }
+handleCollisionGhost ghost Player { playerPowerUp = Active _} = ghost { ghostState = Eaten 20 }
 handleCollisionGhost ghost _                                  = ghost
 
 handleCollisionPlayer :: Ghost -> Player -> Player
@@ -194,7 +220,7 @@ handleCollisionPlayer _ player                                                  
 --Update the maze
 updateMaze :: GameState -> GameState
 updateMaze gstate | whatTile (maze gstate) (playerPosition (player gstate)) == P = gstate { maze = createNewMaze (maze gstate) (playerPosition (player gstate)) [] (0, 0), points = (points gstate) + 10 }
-                  | whatTile (maze gstate) (playerPosition (player gstate)) == S = gstate { maze = createNewMaze (maze gstate) (playerPosition (player gstate)) [] (0, 0), player = (player gstate) { playerPowerUp = Active 10 } }
+                  | whatTile (maze gstate) (playerPosition (player gstate)) == S = gstate { maze = createNewMaze (maze gstate) (playerPosition (player gstate)) [] (0, 0), player = (player gstate) { playerPowerUp = Active 60 } }
                   | otherwise                                                    = gstate
 
 createNewMaze :: Maze -> Coordinate -> Maze -> Coordinate -> Maze
@@ -206,3 +232,28 @@ createNewMaze maze pMCoord newMaze (x, y) | y >= mazeLength = newMaze
     createRow tiles counter | counter >= mazeWidth    = tiles
                             | pMCoord == (counter, y) = createRow (tiles ++ [E]) (counter + 1)
                             | otherwise               = createRow (tiles ++ [(whatTile maze (counter, y))]) (counter + 1)
+
+--Check for win
+checkForWin :: Maze -> Coordinate -> Bool
+checkForWin _ (-1, -1)                                     = True
+checkForWin maze coord@(x, y) | (whatTile maze coord) == P = False
+                              | otherwise                  = checkForWin maze nextCoord
+  where
+    nextCoord :: Coordinate
+    nextCoord | y >= mazeLength = (-1, -1)
+              | x >= mazeWidth  = (0, y + 1)
+              | otherwise       = (x + 1, y)
+
+
+--Winning and losing animation
+playerAnimation :: Coordinate -> Int -> Coordinate
+playerAnimation (x, y) i | i > 35    = (x + 1, y)
+                         | i > 30    = (x, y + 1)
+                         | i > 5    = (x - 1, y)
+                         | otherwise = (x, y - 1)
+
+ghostAnimation :: Int -> Ghost -> Ghost
+ghostAnimation i ghost | i > 30    = let (x, y) = ghostPosition ghost
+                                     in ghost { ghostPosition = (x, y - 1) }
+                       | otherwise = let (x, y) = ghostPosition ghost
+                                     in ghost { ghostPosition = (x, y + 1) }
