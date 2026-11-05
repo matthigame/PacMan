@@ -2,6 +2,8 @@
 --   which represent the state of the game
 module Model where
 
+import System.Random
+
 -- Our GameState
 data GameState = GameState {
     maze :: Maze
@@ -10,6 +12,7 @@ data GameState = GameState {
 ,   ghosts :: Ghosts
 ,   player :: Player
 ,   totalSteps :: Int
+,   randomGenerator :: Maybe StdGen
 }
 
 --
@@ -42,7 +45,7 @@ data Player = Player {
 -- Everything that is used for the ghosts
 data GhostState = Eaten Int | Chasing
   deriving Eq
-data GhostAlgorithm = ShortPath | FuturePath | PastPath | ShyPath | Guard Coordinate | Random
+data GhostAlgorithm = ShortPath | FuturePath | PastPath | Random
 --type GhostPosition = Coordinate
 data Ghost = Ghost {
     ghostState :: GhostState
@@ -76,10 +79,12 @@ initialState = GameState { maze = testBoard
                                        Ghost { ghostState = Chasing, ghostAlgorithm = FuturePath, ghostPosition = (1, 29), ghostDirection = East, tilesAway = 40 },
                                        Ghost { ghostState = Chasing, ghostAlgorithm = PastPath, ghostPosition = (25, 1), ghostDirection = East, tilesAway = 40 },
                                        Ghost { ghostState = Chasing, ghostAlgorithm = Random, ghostPosition = (25, 29), ghostDirection = East, tilesAway = 40 }]
-                           , player = Player { playerState = Alive, playerPowerUp = Inactive, playerPosition = (13, 23), playerDirection = West, nextDirection = West } 
+                           , player = Player { playerState = Alive, playerPowerUp = Inactive, playerPosition = (13, 23), playerDirection = East, nextDirection = East } 
                            , totalSteps = 0
+                           , randomGenerator = Nothing
                            }
 
+animationState :: GameState
 animationState = GameState { maze = testBoard
                            , points = 0
                            , gameStatus = Home
@@ -89,12 +94,13 @@ animationState = GameState { maze = testBoard
                                        Ghost { ghostState = Chasing, ghostAlgorithm = Random, ghostPosition = (26, 30), ghostDirection = East, tilesAway = 40 }]
                            , player = Player { playerState = Alive, playerPowerUp = Inactive, playerPosition = (1, 10), playerDirection = East, nextDirection = East } 
                            , totalSteps = 0
+                           , randomGenerator = Nothing
                            }
 
 -- The basic starting maze
 testBoard :: Maze
 testBoard = [[W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W],
-             [W, E, P, P, P, P, P, P, P, P, P, P, P, W, W, P, P, P, P, P, P, P, P, P, P, P, P, W],
+             [W, P, P, P, P, P, P, P, P, P, P, P, P, W, W, P, P, P, P, P, P, P, P, P, P, P, P, W],
              [W, P, W, W, W, W, P, W, W, W, W, W, P, W, W, P, W, W, W, W, W, P, W, W, W, W, P, W],
              [W, S, W, W, W, W, P, W, W, W, W, W, P, W, W, P, W, W, W, W, W, P, W, W, W, W, S, W],
              [W, P, W, W, W, W, P, W, W, W, W, W, P, W, W, P, W, W, W, W, W, P, W, W, W, W, P, W],
@@ -102,17 +108,17 @@ testBoard = [[W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, W, 
              [W, P, W, W, W, W, P, W, W, P, W, W, W, W, W, W, W, W, P, W, W, P, W, W, W, W, P, W],
              [W, P, W, W, W, W, P, W, W, P, W, W, W, W, W, W, W, W, P, W, W, P, W, W, W, W, P, W],
              [W, P, P, P, P, P, P, W, W, P, P, P, P, W, W, P, P, P, P, W, W, P, P, P, P, P, P, W],
-             [W, W, W, W, W, W, P, W, W, W, W, W, P, W, W, P, W, W, W, W, W, P, W, W, W, W, W, W],
-             [W, W, W, W, W, W, P, W, W, W, W, W, P, W, W, P, W, W, W, W, W, P, W, W, W, W, W, W],
-             [W, W, W, W, W, W, P, W, W, P, P, P, P, P, P, P, P, P, P, W, W, P, W, W, W, W, W, W],
-             [W, W, W, W, W, W, P, W, W, P, W, W, W, W, W, W, W, W, P, W, W, P, W, W, W, W, W, W],
-             [W, W, W, W, W, W, P, W, W, P, W, W, W, W, W, W, W, W, P, W, W, P, W, W, W, W, W, W],
-             [W, E, E, E, E, E, P, P, P, P, W, W, W, W, W, W, W, W, P, P, P, P, E, E, E, E, E, W],
-             [W, W, W, W, W, W, P, W, W, P, W, W, W, W, W, W, W, W, P, W, W, P, W, W, W, W, W, W],
-             [W, W, W, W, W, W, P, W, W, P, W, W, W, W, W, W, W, W, P, W, W, P, W, W, W, W, W, W],
-             [W, W, W, W, W, W, P, W, W, P, P, P, P, P, P, P, P, P, P, W, W, P, W, W, W, W, W, W],
-             [W, W, W, W, W, W, P, W, W, P, W, W, W, W, W, W, W, W, P, W, W, P, W, W, W, W, W, W],
-             [W, W, W, W, W, W, P, W, W, P, W, W, W, W, W, W, W, W, P, W, W, P, W, W, W, W, W, W],
+             [W, W, W, P, W, W, P, W, W, W, W, W, P, W, W, P, W, W, W, W, W, P, W, W, W, W, P, W],
+             [W, W, W, P, W, W, P, W, W, W, W, W, P, W, W, P, W, W, W, W, W, P, W, W, W, W, P, W],
+             [W, W, W, P, W, W, P, W, W, P, P, P, P, P, P, P, P, P, P, W, W, P, W, W, W, W, P, W],
+             [W, W, W, P, W, W, P, W, W, P, W, W, W, W, W, W, W, W, P, W, W, P, W, W, W, W, P, W],
+             [W, W, W, P, W, W, P, W, W, P, W, W, W, W, W, W, W, W, P, W, W, P, W, W, W, W, P, W],
+             [W, P, P, P, P, P, P, P, P, P, W, W, W, W, W, W, W, W, P, P, P, P, P, P, P, P, P, W],
+             [W, P, W, P, W, W, P, W, W, P, W, W, W, W, W, W, W, W, P, W, W, P, W, W, P, W, W, W],
+             [W, P, W, P, W, W, P, W, W, P, W, W, W, W, W, W, W, W, P, W, W, P, W, W, P, W, W, W],
+             [W, P, W, P, W, W, P, W, W, P, P, P, P, P, P, P, P, P, P, W, W, P, W, W, P, W, W, W],
+             [W, P, W, P, W, W, P, W, W, P, W, W, W, W, W, W, W, W, P, W, W, P, W, W, P, W, W, W],
+             [W, P, W, P, W, W, P, W, W, P, W, W, W, W, W, W, W, W, P, W, W, P, W, W, P, W, W, W],
              [W, P, P, P, P, P, P, P, P, P, P, P, P, W, W, P, P, P, P, P, P, P, P, P, P, P, P, W],
              [W, P, W, W, W, W, P, W, W, W, W, W, P, W, W, P, W, W, W, W, W, P, W, W, W, W, P, W],
              [W, P, W, W, W, W, P, W, W, W, W, W, P, W, W, P, W, W, W, W, W, P, W, W, W, W, P, W],
@@ -133,3 +139,10 @@ mazeLength = length testBoard
 
 mazeWidth :: Int
 mazeWidth  = length (testBoard !! 0)
+
+currentHighScore :: IO String
+currentHighScore = readFile locationOfHighScoreFile
+
+-- Change this to the location of the txt file I did not see how to automate this
+locationOfHighScoreFile :: String
+locationOfHighScoreFile = "C:\\Users\\matth\\OneDrive\\Bureaublad\\PacMan\\HighScores.txt"

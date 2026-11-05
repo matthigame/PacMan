@@ -7,15 +7,17 @@ import Graphics.Gloss
 import Model
 
 view :: GameState -> IO Picture
-view = return . viewPure
+view gstate = do 
+    highScore <- currentHighScore
+    return (viewPure highScore gstate)
 
-viewPure :: GameState -> Picture
-viewPure GameState { gameStatus = Home }          = drawHomeScreen
-viewPure gstate@GameState { gameStatus = Win i }  = endGameAnimation gstate i "You win!"
-viewPure gstate@GameState { gameStatus = Lose i } = endGameAnimation gstate i "You lose"
-viewPure gState = let player'         = (player gState)
-                      playerPosition' = (playerPosition player')
-                  in  pictures [drawMaze (maze gState) playerPosition', drawPlayer player', cameraTranslate (drawGhosts (ghosts gState)) playerPosition', drawPoints (points gState)]
+viewPure :: String -> GameState -> Picture
+viewPure highScore GameState { gameStatus = Home }          = drawHomeScreen highScore
+viewPure _ gstate@GameState { gameStatus = Win i }  = endGameAnimation gstate i "You win!"
+viewPure _ gstate@GameState { gameStatus = Lose i } = endGameAnimation gstate i "You lose"
+viewPure _ gState = let player'         = (player gState)
+                        playerPosition' = (playerPosition player')
+                    in  pictures [drawMaze (maze gState) playerPosition', drawPlayer player', cameraTranslate (drawGhosts (ghosts gState)) playerPosition', drawPoints (points gState)]
 
 drawMaze :: Maze -> Coordinate -> Picture
 drawMaze maze playerPosition = cameraTranslate (pictures (drawTiles (0, 0))) playerPosition
@@ -50,8 +52,9 @@ drawGhosts :: Ghosts -> Picture
 drawGhosts ghosts = pictures (map drawGhost ghosts)
   where
     drawGhost :: Ghost -> Picture
-    drawGhost ghost@Ghost { ghostState = Chasing } = translate (15 * fromIntegral (fst (ghostPosition ghost)) - 200) (15 * fromIntegral (snd (ghostPosition ghost)) - 200) (color red (circleSolid 5))
-    drawGhost _                                    = Blank
+    drawGhost ghost@Ghost { ghostState = Chasing }             = translate (15 * fromIntegral (fst (ghostPosition ghost)) - 200) (15 * fromIntegral (snd (ghostPosition ghost)) - 200) (color red (circleSolid 5))
+    drawGhost ghost@Ghost { ghostState = Eaten i } | odd i     = translate (15 * fromIntegral (fst (ghostPosition ghost)) - 200) (15 * fromIntegral (snd (ghostPosition ghost)) - 200) (color red (circleSolid 5))
+                                                   | otherwise = Blank
 
 drawPoints :: Int -> Picture
 drawPoints i = translate (-300) (-300) (color white (text (show i)))
@@ -59,8 +62,11 @@ drawPoints i = translate (-300) (-300) (color white (text (show i)))
 cameraTranslate :: Picture -> Coordinate -> Picture
 cameraTranslate picture playerPosition = translate (-(15 * fromIntegral (fst playerPosition) - 200)) (-(15 * fromIntegral (snd playerPosition) - 200)) picture
 
-drawHomeScreen :: Picture
-drawHomeScreen = pictures [scale (0.9) (0.9) (translate (-230) (50) (color white (text "PacMan"))), scale (0.25) (0.25) (translate (-630) (-200) (color white (text "Press space to play")))]
+drawHomeScreen :: String -> Picture
+drawHomeScreen highScore = pictures [scale (0.9) (0.9) (translate (-230) (50) (color white (text "PacMan"))), scale (0.25) (0.25) (translate (-630) (-200) (color white (text "Press space to play"))), drawHighScore highScore]
+
+drawHighScore :: String -> Picture
+drawHighScore highScore = pictures [scale (0.25) (0.25) (translate (-330) (-400) (color white (text "HighScore"))), scale (0.25) (0.25) (translate (-175) (-550) (color white (text highScore)))]
 
 endGameAnimation :: GameState -> Int -> String -> Picture
 endGameAnimation gstate i string = pictures [textTransformations (text string) i, animationPartPacman (player gstate), drawGhosts (ghosts gstate)]
