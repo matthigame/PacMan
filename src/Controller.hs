@@ -56,7 +56,7 @@ finishGame _ _ = return initialState
 writeScore :: Int -> IO ()
 writeScore score = do
     highScore <- currentHighScore
-    if ((read highScore) < score) then writeFile locationOfHighScoreFile (show score) else return ()
+    if ((read highScore) < score) then writeFile "HighScores.txt" (show score) else return ()
 
 -- | Handle user input
 input :: Event -> GameState -> IO GameState
@@ -72,26 +72,21 @@ inputKey (EventKey (Char c) Down _ _) gstate
 inputKey (EventKey (SpecialKey KeySpace) _ _ _) GameState { gameStatus = Home } = initialState { gameStatus = Play }
 inputKey _ gstate = gstate -- Otherwise keep the same
 
--- gameState changing
+--General functionality
 pauseState :: GameStatus -> GameStatus
 pauseState  Play = Pause
 pauseState Pause = Play
 pauseState state = state
 
--- General functionality
 move :: Coordinate -> Direction -> Coordinate
 move (x, y) North = (x, y + 1)
 move (x, y) East  = (x + 1, y)
 move (x, y) South = (x, y - 1)
 move (x, y) West  = (x - 1, y)
 
+--changes the nextDirection from the player, this means the next time they hit an intersection that allows them to go this direction, they will automatically turn.
 changePlayerDirection :: Player -> Direction -> Player
 changePlayerDirection player direction = player { nextDirection = direction }
-
--- The player and ghosts should not be able to turn 180 degrees
-turn :: Direction -> Direction -> Direction
-turn currentD inputD | currentD == inputD = currentD
-                     | otherwise          = inputD
 
 reverseDirection :: Direction -> Direction
 reverseDirection North = South
@@ -99,6 +94,7 @@ reverseDirection East  = West
 reverseDirection South = North
 reverseDirection West  = East
 
+-- this method checks if there are multiple direction the player or ghosts could go and returns these. 
 checkForIntersection :: Maze -> Coordinate -> Direction -> [Direction]
 checkForIntersection maze position currentDirection = [x | x <- [North, East, South, West], helper x && x /= reverseDirection currentDirection]
   where
@@ -118,7 +114,7 @@ playerMove player maze | whatTile maze (move (playerPosition player) (playerDire
 
 playerTurn :: Maze -> Player -> Player
 playerTurn maze player | (checkForIntersection maze (playerPosition player) (playerDirection player)) `has` (nextDirection player) = 
-    let playerDirection' = turn (playerDirection player) (nextDirection player)
+    let playerDirection' = nextDirection player
     in player { playerDirection = playerDirection' }
                        | otherwise = player
   where
@@ -126,7 +122,6 @@ playerTurn maze player | (checkForIntersection maze (playerPosition player) (pla
     has [] _                 = False
     has (x:xs) y | x == y    = True
                  | otherwise = xs `has` y
-
 
 -- Ghost functionality
 ghostMove :: Ghost -> Maze -> Ghost
@@ -136,7 +131,7 @@ ghostMove ghost maze | whatTile maze (move (ghostPosition ghost) (ghostDirection
                      | otherwise = ghost
 
 data GamePathingTree = Node Direction Int [GamePathingTree] | Leaf | PacMan Direction
-  deriving (Eq, Show)
+  deriving Eq
 
 getInt :: GamePathingTree -> Int
 getInt Leaf         = 1000
@@ -148,9 +143,9 @@ flatten Leaf                  = []
 flatten (PacMan direction)    = [direction]
 flatten (Node direction _ xs) = direction : concatMap flatten xs
 
--- Both Leaf and PacMan should never be used here. This method should only be called when we need to know where we want to go next. Using maybe code here would only make the other code more complex when it really should just not happen.
+-- The input here should never be an empty list. Using maybe code here would only make the other code more complex when it really should just not happen.
 nextValue :: Int -> [Direction] -> Direction
-nextValue _ []       = West
+nextValue _ []      = West
 nextValue 0 (x : _) = x
 nextValue i (_ : xs) = nextValue (i - 1) xs
 
@@ -176,6 +171,7 @@ ghostGo gen maze player@Player { playerPowerUp = Inactive } ghost@Ghost { ghostS
     getNextDirection Ghost { ghostAlgorithm = Random } = let (ranDirection, gen') = randomDirection gen maze ghost
                                                          in (ghost { ghostDirection = ranDirection }, gen')
 
+    --looks where a future position of the player could be
     futurePosition :: StdGen -> Player -> Int -> (Coordinate, StdGen)
     futurePosition gen' player' 0 = ((playerPosition player'), gen')
     futurePosition _ player' i = let (nextPosition, gen') = nextPlayerPosition player' 
@@ -186,11 +182,13 @@ ghostGo gen maze player@Player { playerPowerUp = Inactive } ghost@Ghost { ghostS
                                      (randomNumber, newGen) = randomR (0 :: Int, ((length possibleDirections) - 1) :: Int) gen
                                  in  (playerMove (player' { playerDirection = (possibleDirections !! randomNumber) }) maze, newGen)
 
+    --looks where a past position of the player could be
     pastPosition :: StdGen -> Player -> Int -> (Coordinate, StdGen)
     pastPosition gen' player' 0 = ((playerPosition player'), gen')
     pastPosition _ player' i = let (nextPosition, gen') = nextPlayerPosition (player' { playerDirection = reverseDirection (playerDirection player') }) 
                                in pastPosition gen' nextPosition (i - 1)
 
+--when the powerup is active all of the ghosts use random movement
 ghostGo gen maze Player { playerPowerUp = Active _ } ghost@Ghost { ghostState = Chasing} = let (randDirection, gen') = randomDirection gen maze ghost 
                                                                                            in (ghostMove (ghost { ghostDirection = randDirection, tilesAway = 40 }) maze, gen')
 ghostGo gen _ _ ghost@Ghost {ghostState = Eaten 0}                                       = (ghost { ghostState = Chasing, tilesAway = 40 }, gen)

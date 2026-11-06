@@ -15,25 +15,16 @@ data GameState = GameState {
 ,   randomGenerator :: Maybe StdGen
 }
 
---
 data GameStatus = Win Int | Lose Int | Play | Pause | Home
   deriving Eq
---type Points :: Int
 data Direction = North | East | South | West
   deriving Eq
-
-instance Show Direction where
-  show North = "North"
-  show East  = "East"
-  show South = "South"
-  show West  = "West"
 
 -- Everything that is used for the player
 data PlayerState = Dead | Alive
   deriving Eq
 data PlayerPowerUp = Inactive | Active Int
   deriving Eq
---data PlayerPosition = Coordinate
 data Player = Player {
     playerState :: PlayerState
 ,   playerPowerUp :: PlayerPowerUp
@@ -46,7 +37,6 @@ data Player = Player {
 data GhostState = Eaten Int | Chasing
   deriving Eq
 data GhostAlgorithm = ShortPath | FuturePath | PastPath | Random
---type GhostPosition = Coordinate
 data Ghost = Ghost {
     ghostState :: GhostState
 ,   ghostAlgorithm :: GhostAlgorithm
@@ -141,8 +131,4 @@ mazeWidth :: Int
 mazeWidth  = length (testBoard !! 0)
 
 currentHighScore :: IO String
-currentHighScore = readFile locationOfHighScoreFile
-
--- Change this to the location of the txt file I did not see how to automate this
-locationOfHighScoreFile :: String
-locationOfHighScoreFile = "C:\\Users\\matth\\OneDrive\\Bureaublad\\PacMan\\HighScores.txt"
+currentHighScore = readFile "HighScores.txt"

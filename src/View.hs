@@ -57,7 +57,7 @@ drawGhosts ghosts = pictures (map drawGhost ghosts)
                                                    | otherwise = Blank
 
 drawPoints :: Int -> Picture
-drawPoints i = translate (-300) (-300) (color white (text (show i)))
+drawPoints i = translate (-190) (175) (scale (0.2) (0.2) (color white (text (show i))))
 
 cameraTranslate :: Picture -> Coordinate -> Picture
 cameraTranslate picture playerPosition = translate (-(15 * fromIntegral (fst playerPosition) - 200)) (-(15 * fromIntegral (snd playerPosition) - 200)) picture
